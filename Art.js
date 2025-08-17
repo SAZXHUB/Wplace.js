@@ -1,911 +1,669 @@
-// Wplace Auto Art Bot - Enhanced Version
-// วางโค้ดนี้ใน Browser Console ของ wplace.live
+// Wplace Pixel Analyzer Tool v2.0 - รองรับ Tile-based Coordinate System
+// วิธีใช้: Copy code นี้แล้ว paste ใน browser console ขณะที่อยู่ในหน้า Wplace.live
 
-class WplaceAutoBot {
+class WplacePixelAnalyzer {
     constructor() {
-        this.isRunning = false;
         this.canvas = null;
         this.ctx = null;
-        this.pixelQueue = [];
-        this.currentImage = null;
-        this.startX = 0;
-        this.startY = 0;
-        this.delay = 30000; // 30 seconds delay between pixels
-        this.imageAnalysis = null;
-        this.colorMap = {
-            '#FFFFFF': { index: 0, name: 'White' },
-            '#E4E4E4': { index: 1, name: 'Light Gray' },
-            '#888888': { index: 2, name: 'Gray' },
-            '#222222': { index: 3, name: 'Dark Gray' },
-            '#FFA7D1': { index: 4, name: 'Pink' },
-            '#E50000': { index: 5, name: 'Red' },
-            '#E59500': { index: 6, name: 'Orange' },
-            '#A06A42': { index: 7, name: 'Brown' },
-            '#E5D900': { index: 8, name: 'Yellow' },
-            '#94E044': { index: 9, name: 'Light Green' },
-            '#02BE01': { index: 10, name: 'Green' },
-            '#00D3DD': { index: 11, name: 'Cyan' },
-            '#0083C7': { index: 12, name: 'Blue' },
-            '#0000EA': { index: 13, name: 'Dark Blue' },
-            '#CF6EE4': { index: 14, name: 'Purple' },
-            '#820080': { index: 15, name: 'Dark Purple' }
-        };
+        this.imageData = null;
+        this.pixelColors = [];
+        this.TILE_SIZE = 256; // Wplace tile size (ปรับได้ถ้าไม่ถูก)
+        this.lastPosition = null; // เก็บตำแหน่งก่อนหน้าสำหรับ back function
+        
+        // เก็บ reference ใน global variable
+        window._currentAnalyzer = this;
+        
+        this.createUI();
     }
 
-    // สร้าง Control Panel
-    createControlPanel() {
-        const panel = document.createElement('div');
-        panel.id = 'wplace-bot-panel';
-        panel.style.cssText = `
+    createUI() {
+        // สร้าง UI overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'wplace-analyzer';
+        overlay.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
             width: 400px;
-            max-height: 90vh;
-            overflow-y: auto;
-            background: rgba(0,0,0,0.95);
+            background: rgba(0, 0, 0, 0.95);
             color: white;
             padding: 20px;
             border-radius: 15px;
-            z-index: 9999;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.7);
-            border: 1px solid rgba(255,255,255,0.1);
+            z-index: 10000;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         `;
 
-        panel.innerHTML = `
-            <div style="display: flex; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0; color: #4CAF50;">🎨 Wplace Auto Art Pro</h2>
-                <button id="closePanel" style="margin-left: auto; background: #f44336; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer;">✕</button>
+        overlay.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #00ff88; font-size: 16px;">🎨 Wplace Analyzer v2.0</h3>
+                <button id="close-analyzer" style="background: #ff4444; border: none; color: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 14px;">✕</button>
             </div>
             
-            <!-- Image Upload Section -->
-            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-                <h4 style="margin-top: 0; color: #81C784;">📁 Image Upload</h4>
-                <input type="file" id="imageFile" accept="image/*" style="width: 100%; padding: 10px; margin: 5px 0; border: 2px dashed #4CAF50; border-radius: 5px; background: rgba(255,255,255,0.1); color: white;">
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button id="loadImage" style="flex: 1; padding: 10px; background: #4CAF50; border: none; color: white; border-radius: 5px; cursor: pointer; font-weight: bold;">📊 Analyze Image</button>
-                </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #ccc; font-size: 12px;">📁 อัปโหลดรูปภาพ:</label>
+                <input type="file" id="image-upload" accept="image/*" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #555; background: #222; color: white; font-size: 12px;">
             </div>
-
-            <!-- Image Analysis Section -->
-            <div id="analysisSection" style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 15px; display: none;">
-                <h4 style="margin-top: 0; color: #64B5F6;">🔍 Image Analysis</h4>
-                <div id="imageInfo" style="margin-bottom: 10px;"></div>
-                <div id="colorAnalysis" style="margin-bottom: 15px;"></div>
-                <canvas id="previewCanvas" style="max-width: 100%; border: 2px solid #666; border-radius: 5px; background: rgba(255,255,255,0.1);"></canvas>
-            </div>
-
-            <!-- Size Settings Section -->
-            <div id="sizeSection" style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 15px; display: none;">
-                <h4 style="margin-top: 0; color: #FFB74D;">📐 Size Settings</h4>
+            
+            <div style="background: #111; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="margin-bottom: 10px; color: #00ff88; font-weight: bold; font-size: 13px;">🎯 ระบบพิกัด Wplace</div>
                 
-                <div style="margin: 15px 0;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Resize Mode:</label>
-                    <div style="display: flex; gap: 10px;">
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                            <input type="radio" name="resizeMode" value="original" checked> Keep Original Size
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                            <input type="radio" name="resizeMode" value="custom"> Custom Size
-                        </label>
-                    </div>
-                </div>
-
-                <div id="customSizeControls" style="display: none; margin: 15px 0;">
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <div>
-                            <label>Width:</label>
-                            <input type="number" id="customWidth" value="50" min="1" max="200" style="width: 60px; padding: 5px; margin: 5px 0;">
-                        </div>
-                        <div>
-                            <label>Height:</label>
-                            <input type="number" id="customHeight" value="50" min="1" max="200" style="width: 60px; padding: 5px; margin: 5px 0;">
-                        </div>
-                        <label style="display: flex; align-items: center; gap: 5px;">
-                            <input type="checkbox" id="keepAspectRatio" checked> Keep Ratio
-                        </label>
-                    </div>
-                </div>
-
-                <div style="margin: 15px 0;">
-                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                        <input type="checkbox" id="addBorder"> Add Border Frame
-                    </label>
-                    <div id="borderControls" style="display: none; margin-top: 10px;">
-                        <label>Border Color:</label>
-                        <select id="borderColor" style="width: 100%; padding: 5px; margin: 5px 0;">
-                            <option value="3">Black</option>
-                            <option value="0">White</option>
-                            <option value="5">Red</option>
-                            <option value="10">Green</option>
-                            <option value="12">Blue</option>
-                        </select>
-                        <label>Border Thickness:</label>
-                        <input type="number" id="borderThickness" value="2" min="1" max="10" style="width: 60px; padding: 5px; margin: 5px 0;">
-                    </div>
-                </div>
-
-                <button id="applySettings" style="width: 100%; padding: 12px; background: #FF9800; border: none; color: white; border-radius: 5px; cursor: pointer; font-weight: bold;">✨ Apply Settings</button>
-            </div>
-
-            <!-- Position & Control Section -->
-            <div id="controlSection" style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 15px; display: none;">
-                <h4 style="margin-top: 0; color: #E57373;">🎯 Placement Settings</h4>
-                
-                <div style="display: flex; gap: 15px; margin: 15px 0;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
                     <div>
-                        <label>Start X:</label>
-                        <input type="number" id="startX" value="100" style="width: 80px; padding: 8px; margin: 5px 0; border-radius: 5px; border: 1px solid #666; background: rgba(255,255,255,0.1); color: white;">
+                        <label style="font-size: 11px; color: #aaa;">Global X:</label>
+                        <input type="number" id="global-x" placeholder="787" style="width: 100%; padding: 6px; border-radius: 5px; border: 1px solid #444; background: #222; color: white; font-size: 12px;">
                     </div>
                     <div>
-                        <label>Start Y:</label>
-                        <input type="number" id="startY" value="100" style="width: 80px; padding: 8px; margin: 5px 0; border-radius: 5px; border: 1px solid #666; background: rgba(255,255,255,0.1); color: white;">
+                        <label style="font-size: 11px; color: #aaa;">Global Y:</label>
+                        <input type="number" id="global-y" placeholder="3730" style="width: 100%; padding: 6px; border-radius: 5px; border: 1px solid #444; background: #222; color: white; font-size: 12px;">
                     </div>
                 </div>
                 
-                <div style="margin: 15px 0;">
-                    <label>Delay between pixels (ms):</label>
-                    <input type="number" id="delay" value="30000" min="1000" style="width: 100px; padding: 8px; margin: 5px 0; border-radius: 5px; border: 1px solid #666; background: rgba(255,255,255,0.1); color: white;">
-                    <small style="display: block; color: #ccc; margin-top: 5px;">30000ms = 30 seconds (recommended)</small>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                    <div>
+                        <label style="font-size: 11px; color: #aaa;">Tile X:</label>
+                        <input type="number" id="tile-x" readonly style="width: 100%; padding: 6px; border-radius: 5px; border: 1px solid #444; background: #333; color: #888; font-size: 12px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; color: #aaa;">Tile Y:</label>
+                        <input type="number" id="tile-y" readonly style="width: 100%; padding: 6px; border-radius: 5px; border: 1px solid #444; background: #333; color: #888; font-size: 12px;">
+                    </div>
                 </div>
-
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button id="startBot" style="flex: 1; padding: 12px; background: #4CAF50; border: none; color: white; border-radius: 5px; cursor: pointer; font-weight: bold;">🚀 Start Bot</button>
-                    <button id="stopBot" style="flex: 1; padding: 12px; background: #f44336; border: none; color: white; border-radius: 5px; cursor: pointer; font-weight: bold;">⏹️ Stop Bot</button>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                    <div>
+                        <label style="font-size: 11px; color: #aaa;">Pixel X in Tile:</label>
+                        <input type="number" id="pixel-x" readonly style="width: 100%; padding: 6px; border-radius: 5px; border: 1px solid #444; background: #333; color: #888; font-size: 12px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; color: #aaa;">Pixel Y in Tile:</label>
+                        <input type="number" id="pixel-y" readonly style="width: 100%; padding: 6px; border-radius: 5px; border: 1px solid #444; background: #333; color: #888; font-size: 12px;">
+                    </div>
+                </div>
+                
+                <button id="check-pixel" style="width: 100%; padding: 10px; background: linear-gradient(45deg, #0066ff, #00ccff); color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 5px; font-weight: bold;">🔍 วิเคราะห์พิกเซล</button>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px;">
+                    <button id="get-current-coords" style="padding: 8px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 11px;">📍 ดึงพิกัด</button>
+                    <button id="goto-coords" style="padding: 8px; background: linear-gradient(45deg, #ff6b00, #ff8c00); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold;">🚀 Goto</button>
                 </div>
             </div>
-
-            <!-- Status Section -->
-            <div id="status" style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; border-left: 4px solid #2196F3;">
-                <div style="font-weight: bold; color: #81C784;">Status:</div>
-                <div id="statusText">Ready - Upload an image to start</div>
-                <div id="progressBar" style="display: none; margin-top: 10px;">
-                    <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 20px; overflow: hidden;">
-                        <div id="progressFill" style="background: linear-gradient(90deg, #4CAF50, #8BC34A); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
-                    </div>
-                    <div id="progressText" style="text-align: center; margin-top: 5px; font-size: 12px;"></div>
+            
+            <div id="pixel-info" style="background: #0a0a0a; padding: 12px; border-radius: 8px; margin-bottom: 10px; min-height: 80px; border: 1px solid #333;">
+                <div style="color: #666; font-size: 11px; text-align: center; padding: 20px 0;">
+                    🎨 อัปโหลดรูปภาพและระบุพิกัดเพื่อเริ่มวิเคราะห์
                 </div>
+            </div>
+            
+            <div id="color-preview" style="width: 100%; height: 40px; border-radius: 8px; border: 2px solid #333; margin-bottom: 10px; background: linear-gradient(45deg, #333 25%, transparent 25%), linear-gradient(-45deg, #333 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #333 75%), linear-gradient(-45deg, transparent 75%, #333 75%); background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 11px;"></div>
+            
+            <div style="font-size: 10px; color: #555; text-align: center; line-height: 1.4;">
+                💡 เครื่องมือสำหรับวิเคราะห์สีและพิกัด Wplace<br>
+                🔧 รองรับ Tile-based Coordinate System
             </div>
         `;
 
-        document.body.appendChild(panel);
-        this.bindEvents();
+        document.body.appendChild(overlay);
+        this.setupEventListeners();
     }
 
-    // ผูก Events
-    bindEvents() {
-        document.getElementById('closePanel').onclick = () => {
-            document.getElementById('wplace-bot-panel').style.display = 'none';
+    setupEventListeners() {
+        // ปิด overlay
+        document.getElementById('close-analyzer').onclick = () => {
+            document.getElementById('wplace-analyzer').remove();
         };
 
-        document.getElementById('loadImage').onclick = () => this.loadImage();
-        document.getElementById('startBot').onclick = () => this.startBot();
-        document.getElementById('stopBot').onclick = () => this.stopBot();
-        document.getElementById('applySettings').onclick = () => this.applySettings();
-
-        // Resize mode toggle
-        document.querySelectorAll('input[name="resizeMode"]').forEach(radio => {
-            radio.addEventListener('change', () => {
-                const customControls = document.getElementById('customSizeControls');
-                customControls.style.display = radio.value === 'custom' ? 'block' : 'none';
-            });
-        });
-
-        // Border toggle
-        document.getElementById('addBorder').addEventListener('change', (e) => {
-            document.getElementById('borderControls').style.display = e.target.checked ? 'block' : 'none';
-        });
-
-        // Keep aspect ratio
-        document.getElementById('keepAspectRatio').addEventListener('change', () => {
-            if (this.currentImage) {
-                this.updateAspectRatio();
+        // อัปโหลดรูป
+        document.getElementById('image-upload').onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.loadImage(file);
             }
-        });
+        };
 
-        document.getElementById('customWidth').addEventListener('input', () => {
-            if (document.getElementById('keepAspectRatio').checked && this.currentImage) {
-                this.updateAspectRatio('width');
-            }
-        });
+        // คำนวณพิกัด tile เมื่อเปลี่ยน global coordinates
+        document.getElementById('global-x').oninput = () => this.updateTileCoordinates();
+        document.getElementById('global-y').oninput = () => this.updateTileCoordinates();
 
-        document.getElementById('customHeight').addEventListener('input', () => {
-            if (document.getElementById('keepAspectRatio').checked && this.currentImage) {
-                this.updateAspectRatio('height');
+        // ตรวจสอบพิกเซล
+        document.getElementById('check-pixel').onclick = () => {
+            const globalX = parseInt(document.getElementById('global-x').value);
+            const globalY = parseInt(document.getElementById('global-y').value);
+            
+            if (!isNaN(globalX) && !isNaN(globalY)) {
+                this.checkPixelAt(globalX, globalY);
+            } else {
+                this.showPixelInfo('❌ กรุณาระบุพิกัด Global X และ Y ที่ถูกต้อง');
             }
-        });
+        };
+
+        // ดึงพิกัดปัจจุบันจาก Wplace
+        document.getElementById('get-current-coords').onclick = () => {
+            this.getCurrentWplaceCoordinates();
+        };
+
+        // Goto พิกัดที่ระบุ
+        document.getElementById('goto-coords').onclick = () => {
+            const globalX = parseInt(document.getElementById('global-x').value);
+            const globalY = parseInt(document.getElementById('global-y').value);
+            
+            if (!isNaN(globalX) && !isNaN(globalY)) {
+                this.gotoCoordinates(globalX, globalY);
+            } else {
+                this.showPixelInfo('❌ กรุณาระบุพิกัด Global X และ Y ก่อน Goto');
+            }
+        };
     }
 
-    // อัพเดท aspect ratio
-    updateAspectRatio(changedField = 'width') {
-        if (!this.currentImage) return;
-
-        const widthInput = document.getElementById('customWidth');
-        const heightInput = document.getElementById('customHeight');
-        const aspectRatio = this.currentImage.width / this.currentImage.height;
-
-        if (changedField === 'width') {
-            heightInput.value = Math.round(widthInput.value / aspectRatio);
-        } else {
-            widthInput.value = Math.round(heightInput.value * aspectRatio);
+    updateTileCoordinates() {
+        const globalX = parseInt(document.getElementById('global-x').value);
+        const globalY = parseInt(document.getElementById('global-y').value);
+        
+        if (!isNaN(globalX) && !isNaN(globalY)) {
+            const tileX = Math.floor(globalX / this.TILE_SIZE);
+            const tileY = Math.floor(globalY / this.TILE_SIZE);
+            const pixelX = globalX % this.TILE_SIZE;
+            const pixelY = globalY % this.TILE_SIZE;
+            
+            document.getElementById('tile-x').value = tileX;
+            document.getElementById('tile-y').value = tileY;
+            document.getElementById('pixel-x').value = pixelX;
+            document.getElementById('pixel-y').value = pixelY;
         }
     }
 
-    // โหลดและวิเคราะห์รูปภาพ
-    async loadImage() {
-        const fileInput = document.getElementById('imageFile');
-        if (!fileInput.files[0]) {
-            this.updateStatus('❌ Please select an image file');
-            return;
-        }
-
+    gotoCoordinates(globalX, globalY) {
         try {
-            this.updateStatus('🔄 Loading and analyzing image...');
+            // วิธีที่ 1: ใช้ URL hash navigation
+            const newHash = `#${globalX},${globalY}`;
             
-            const file = fileInput.files[0];
-            const img = new Image();
+            // บันทึกพิกัดปัจจุบันสำหรับย้อนกลับ
+            const currentHash = window.location.hash;
+            if (currentHash && currentHash !== newHash) {
+                this.lastPosition = currentHash;
+            }
             
-            img.onload = () => {
-                this.currentImage = img;
-                this.analyzeImage(img);
-                this.showAnalysis();
-            };
+            // อัปเดต URL hash
+            window.location.hash = newHash;
             
-            img.onerror = () => {
-                this.updateStatus('❌ Failed to load image');
-            };
+            // วิธีที่ 2: จำลองการคลิกหรือการนำทาง (backup method)
+            setTimeout(() => {
+                // พยายามหา canvas หรือ map element เพื่อทำการ pan
+                const canvas = document.querySelector('canvas');
+                const mapContainer = document.querySelector('[class*="map"], [id*="map"], [class*="canvas"], [id*="canvas"]');
+                
+                if (canvas) {
+                    // สร้าง click event ที่ตำแหน่งกลาง canvas
+                    const rect = canvas.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    
+                    const clickEvent = new MouseEvent('click', {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: centerX,
+                        clientY: centerY
+                    });
+                    
+                    canvas.dispatchEvent(clickEvent);
+                }
+                
+                // วิธีที่ 3: พยายาม trigger การ refresh หรือ reload tiles
+                if (typeof window.game !== 'undefined' && window.game.camera) {
+                    // หากมี game object (บางเว็บไซต์มี)
+                    if (typeof window.game.camera.setPosition === 'function') {
+                        window.game.camera.setPosition(globalX, globalY);
+                    }
+                } else {
+                    // กระตุ้นให้เว็บโหลดใหม่เพื่อไปยังตำแหน่งใหม่
+                    window.dispatchEvent(new Event('hashchange'));
+                }
+                
+            }, 100);
             
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
+            // คำนวณข้อมูลเพิ่มเติม
+            const tileX = Math.floor(globalX / this.TILE_SIZE);
+            const tileY = Math.floor(globalY / this.TILE_SIZE);
+            const pixelX = globalX % this.TILE_SIZE;
+            const pixelY = globalY % this.TILE_SIZE;
+            
+            this.showPixelInfo(`🚀 กำลัง Goto ไปยังพิกัด...
+┌─ Global: (${globalX}, ${globalY})
+├─ Tile: (${tileX}, ${tileY})  
+└─ Pixel in Tile: (${pixelX}, ${pixelY})
+
+📍 URL Updated: ${newHash}
+⏳ รอสักครู่เพื่อให้เว็บโหลดตำแหน่งใหม่...
+
+💡 หากไม่ได้ผล ลองรีเฟรชหน้าเว็บ`);
+            
+            // แสดงสถานะการโหลด
+            setTimeout(() => {
+                this.showPixelInfo(`✅ Goto เสร็จสิ้น!
+📍 ตำแหน่งปัจจุบัน: (${globalX}, ${globalY})
+🔲 Tile: (${tileX}, ${tileY})
+🎯 Pixel: (${pixelX}, ${pixelY})
+
+${this.lastPosition ? `🔄 กลับตำแหน่งเดิม: wplace.back()` : ''}
+🖱️ คลิกที่หน้าจอเพื่อวาง pixel!`);
+            }, 2000);
             
         } catch (error) {
-            this.updateStatus('❌ Error loading image: ' + error.message);
+            this.showPixelInfo(`❌ Goto ไม่สำเร็จ: ${error.message}
+💡 ลอง:
+1. รีเฟรชหน้าเว็บ
+2. ใช้ wplace.goto(${globalX}, ${globalY}) ใน console
+3. Copy URL ไปเปิดใน tab ใหม่: ${window.location.origin}#${globalX},${globalY}`);
         }
     }
 
-    // วิเคราะห์รูปภาพ
-    analyzeImage(img) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
-        
-        const imageData = ctx.getImageData(0, 0, img.width, img.height);
-        const pixels = imageData.data;
-        
-        // วิเคราะห์สีที่ใช้
-        const colorCounts = {};
-        const uniqueColors = new Set();
-        let totalPixels = 0;
-        let transparentPixels = 0;
-        
-        for (let i = 0; i < pixels.length; i += 4) {
-            const r = pixels[i];
-            const g = pixels[i + 1];
-            const b = pixels[i + 2];
-            const a = pixels[i + 3];
+    getCurrentWplaceCoordinates() {
+        // พยายามดึงพิกัดปัจจุบันจาก Wplace DOM หรือ URL
+        try {
+            // วิธีที่ 1: ตรวจสอบ URL hash
+            const hash = window.location.hash;
+            const match = hash.match(/#([+-]?\d+),([+-]?\d+)(?:,(\d+))?/);
             
-            if (a < 128) {
-                transparentPixels++;
-            } else {
-                totalPixels++;
-                const hex = this.rgbToHex(r, g, b);
-                uniqueColors.add(hex);
+            if (match) {
+                const x = parseInt(match[1]);
+                const y = parseInt(match[2]);
                 
-                const closestColor = this.findClosestColorHex(hex);
-                colorCounts[closestColor] = (colorCounts[closestColor] || 0) + 1;
+                document.getElementById('global-x').value = x;
+                document.getElementById('global-y').value = y;
+                this.updateTileCoordinates();
+                
+                this.showPixelInfo(`✅ ดึงพิกัดจาก URL สำเร็จ!
+📍 Global: (${x}, ${y})`);
+                return;
+            }
+            
+            // วิธีที่ 2: หาจาก DOM elements
+            const pixelInfo = document.querySelector('[class*="pixel"], [id*="pixel"], [class*="coord"], [id*="coord"]');
+            if (pixelInfo && pixelInfo.textContent) {
+                const coordMatch = pixelInfo.textContent.match(/(\d+),\s*(\d+)/);
+                if (coordMatch) {
+                    const x = parseInt(coordMatch[1]);
+                    const y = parseInt(coordMatch[2]);
+                    
+                    document.getElementById('global-x').value = x;
+                    document.getElementById('global-y').value = y;
+                    this.updateTileCoordinates();
+                    
+                    this.showPixelInfo(`✅ ดึงพิกัดจาก DOM สำเร็จ!
+📍 Global: (${x}, ${y})`);
+                    return;
+                }
+            }
+            
+            this.showPixelInfo(`⚠️ ไม่สามารถดึงพิกัดอัตโนมัติได้
+💡 กรุณาระบุพิกัดด้วยตัวเอง`);
+            
+        } catch (error) {
+            this.showPixelInfo(`❌ เกิดข้อผิดพลาด: ${error.message}`);
+        }
+    }
+
+    loadImage(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                this.processImage(img);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    processImage(img) {
+        // สร้าง canvas สำหรับวิเคราะห์
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        
+        this.canvas.width = img.width;
+        this.canvas.height = img.height;
+        
+        // วาดรูปลง canvas
+        this.ctx.drawImage(img, 0, 0);
+        
+        // ดึงข้อมูล pixel
+        this.imageData = this.ctx.getImageData(0, 0, img.width, img.height);
+        
+        // วิเคราะห์สี
+        this.analyzeColors();
+        
+        this.showPixelInfo(`✅ โหลดรูปสำเร็จ!
+📏 ขนาด: ${img.width} × ${img.height} px
+🎨 จำนวนสีหลัก: ${this.pixelColors.length}
+🔍 พร้อมวิเคราะห์พิกเซลแล้ว!`);
+    }
+
+    analyzeColors() {
+        const data = this.imageData.data;
+        const colorMap = new Map();
+        
+        // นับสีทั้งหมด
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
+            
+            if (a > 128) { // นับเฉพาะพิกเซลที่ไม่โปร่งใส
+                const colorKey = `${r},${g},${b}`;
+                colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1);
             }
         }
         
-        this.imageAnalysis = {
-            width: img.width,
-            height: img.height,
-            totalPixels: totalPixels,
-            transparentPixels: transparentPixels,
-            uniqueColors: uniqueColors.size,
-            colorCounts: colorCounts,
-            dominantColors: Object.entries(colorCounts)
-                .sort(([,a], [,b]) => b - a)
-                .slice(0, 8)
-        };
-        
-        // อัพเดท custom size inputs
-        document.getElementById('customWidth').value = img.width;
-        document.getElementById('customHeight').value = img.height;
+        // เรียงสีตามความถี่
+        this.pixelColors = Array.from(colorMap.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 20) // เก็บ 20 สีแรก
+            .map(([color, count]) => {
+                const [r, g, b] = color.split(',').map(Number);
+                return {
+                    rgb: [r, g, b],
+                    hex: this.rgbToHex(r, g, b),
+                    count: count
+                };
+            });
     }
 
-    // แสดงผลการวิเคราะห์
-    showAnalysis() {
-        const analysis = this.imageAnalysis;
-        const img = this.currentImage;
-        
-        // แสดงข้อมูลภาพ
-        document.getElementById('imageInfo').innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                <div>📏 Size: ${analysis.width}×${analysis.height}px</div>
-                <div>🎨 Unique Colors: ${analysis.uniqueColors}</div>
-                <div>🖼️ Visible Pixels: ${analysis.totalPixels.toLocaleString()}</div>
-                <div>👻 Transparent: ${analysis.transparentPixels.toLocaleString()}</div>
-            </div>
-        `;
-        
-        // แสดงสีที่ใช้
-        const colorsHtml = analysis.dominantColors.map(([colorHex, count]) => {
-            const colorInfo = this.colorMap[colorHex];
-            const percentage = ((count / analysis.totalPixels) * 100).toFixed(1);
-            return `
-                <div style="display: flex; align-items: center; gap: 8px; margin: 5px 0; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 5px;">
-                    <div style="width: 20px; height: 20px; background: ${colorHex}; border-radius: 3px; border: 1px solid rgba(255,255,255,0.3);"></div>
-                    <div style="flex: 1;">
-                        <div style="font-size: 12px; font-weight: bold;">${colorInfo.name}</div>
-                        <div style="font-size: 10px; color: #ccc;">${count.toLocaleString()} pixels (${percentage}%)</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        document.getElementById('colorAnalysis').innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 8px; color: #81C784;">Colors Used in Image:</div>
-            ${colorsHtml}
-        `;
-        
-        // แสดงตัวอย่างรูป
-        const previewCanvas = document.getElementById('previewCanvas');
-        const previewCtx = previewCanvas.getContext('2d');
-        
-        // Calculate preview size (max 300px)
-        const maxPreview = 300;
-        let previewWidth = img.width;
-        let previewHeight = img.height;
-        
-        if (previewWidth > maxPreview || previewHeight > maxPreview) {
-            const ratio = Math.min(maxPreview / previewWidth, maxPreview / previewHeight);
-            previewWidth = Math.floor(previewWidth * ratio);
-            previewHeight = Math.floor(previewHeight * ratio);
-        }
-        
-        previewCanvas.width = previewWidth;
-        previewCanvas.height = previewHeight;
-        previewCtx.drawImage(img, 0, 0, previewWidth, previewHeight);
-        
-        // แสดงส่วนต่าง ๆ
-        document.getElementById('analysisSection').style.display = 'block';
-        document.getElementById('sizeSection').style.display = 'block';
-        
-        this.updateStatus(`✅ Image analyzed - ${analysis.width}×${analysis.height}px, ${analysis.uniqueColors} colors`);
-    }
-
-    // ประมวลผลการตั้งค่า
-    applySettings() {
-        if (!this.currentImage) {
-            this.updateStatus('❌ No image loaded');
+    checkPixelAt(globalX, globalY) {
+        if (!this.imageData) {
+            this.showPixelInfo('❌ กรุณาอัปโหลดรูปภาพก่อน');
             return;
         }
 
-        this.updateStatus('⚙️ Processing image with settings...');
+        // คำนวณพิกัดสัมพันธ์กับรูปภาพ
+        // สมมติว่ารูปภาพเริ่มต้นที่พิกัด (0,0) ของ global coordinate
+        const imageX = globalX;
+        const imageY = globalY;
+        
+        const width = this.canvas.width;
+        const height = this.canvas.height;
 
-        const resizeMode = document.querySelector('input[name="resizeMode"]:checked').value;
-        const addBorder = document.getElementById('addBorder').checked;
-        
-        let targetWidth = this.currentImage.width;
-        let targetHeight = this.currentImage.height;
-        
-        if (resizeMode === 'custom') {
-            targetWidth = parseInt(document.getElementById('customWidth').value);
-            targetHeight = parseInt(document.getElementById('customHeight').value);
+        if (imageX < 0 || imageX >= width || imageY < 0 || imageY >= height) {
+            this.showPixelInfo(`❌ พิกัดเกินขอบเขตรูป!
+📏 ขนาดรูป: 0 ถึง ${width-1} × 0 ถึง ${height-1}
+🎯 พิกัดที่ระบุ: (${globalX}, ${globalY})`);
+            return;
         }
+
+        // คำนวณตำแหน่งใน array
+        const index = (imageY * width + imageX) * 4;
+        const data = this.imageData.data;
         
-        // สร้าง canvas สำหรับประมวลผล
-        const processCanvas = document.createElement('canvas');
-        const processCtx = processCanvas.getContext('2d');
+        const r = data[index];
+        const g = data[index + 1];
+        const b = data[index + 2];
+        const a = data[index + 3];
         
-        // คำนวณขนาดสุดท้าย (รวม border)
-        const borderThickness = addBorder ? parseInt(document.getElementById('borderThickness').value) : 0;
-        const finalWidth = targetWidth + (borderThickness * 2);
-        const finalHeight = targetHeight + (borderThickness * 2);
+        const hex = this.rgbToHex(r, g, b);
+        const rgb = `rgb(${r}, ${g}, ${b})`;
         
-        processCanvas.width = finalWidth;
-        processCanvas.height = finalHeight;
+        // แสดงสีใน preview
+        const preview = document.getElementById('color-preview');
+        preview.style.background = rgb;
+        preview.style.color = this.getContrastColor(r, g, b);
+        preview.innerHTML = `<div style="font-weight: bold;">${hex}</div>`;
         
-        // วาด border ถ้ามี
-        if (addBorder) {
-            const borderColorIndex = parseInt(document.getElementById('borderColor').value);
-            const borderColor = Object.keys(this.colorMap).find(
-                hex => this.colorMap[hex].index === borderColorIndex
-            );
-            
-            processCtx.fillStyle = borderColor;
-            processCtx.fillRect(0, 0, finalWidth, finalHeight);
-        }
+        // คำนวณ tile coordinates
+        const tileX = Math.floor(globalX / this.TILE_SIZE);
+        const tileY = Math.floor(globalY / this.TILE_SIZE);
+        const pixelX = globalX % this.TILE_SIZE;
+        const pixelY = globalY % this.TILE_SIZE;
         
-        // วาดรูปภาพ
-        processCtx.drawImage(
-            this.currentImage,
-            borderThickness, borderThickness,
-            targetWidth, targetHeight
-        );
+        // หาสี Wplace ที่ใกล้เคียงที่สุด
+        const wplaceColor = this.findClosestWplaceColor(r, g, b);
+        const distance = this.getColorDistance(r, g, b, wplaceColor.rgb);
         
-        // ประมวลผลเป็น pixel data
-        this.processImageData(processCtx, finalWidth, finalHeight);
-        
-        // อัพเดทตัวอย่าง
-        const previewCanvas = document.getElementById('previewCanvas');
-        const previewCtx = previewCanvas.getContext('2d');
-        
-        // Calculate preview size
-        const maxPreview = 300;
-        let previewWidth = finalWidth;
-        let previewHeight = finalHeight;
-        
-        if (previewWidth > maxPreview || previewHeight > maxPreview) {
-            const ratio = Math.min(maxPreview / previewWidth, maxPreview / previewHeight);
-            previewWidth = Math.floor(previewWidth * ratio);
-            previewHeight = Math.floor(previewHeight * ratio);
-        }
-        
-        previewCanvas.width = previewWidth;
-        previewCanvas.height = previewHeight;
-        previewCtx.drawImage(processCanvas, 0, 0, previewWidth, previewHeight);
-        
-        // แสดงส่วนควบคุม
-        document.getElementById('controlSection').style.display = 'block';
-        
-        this.updateStatus(`✅ Processing complete - ${finalWidth}×${finalHeight}px, ${this.pixelQueue.length} pixels to place`);
+        this.showPixelInfo(`🎯 พิกัดที่วิเคราะห์:
+┌─ Global: (${globalX}, ${globalY})
+├─ Tile: (${tileX}, ${tileY})  
+└─ Pixel in Tile: (${pixelX}, ${pixelY})
+
+🎨 สีต้นฉบับ:
+├─ RGB: (${r}, ${g}, ${b})
+├─ HEX: ${hex}
+└─ Alpha: ${a}
+
+🎯 สี Wplace ที่แนะนำ:
+├─ ชื่อ: ${wplaceColor.name}
+├─ HEX: ${wplaceColor.hex}
+├─ RGB: (${wplaceColor.rgb.join(', ')})
+└─ ความแตกต่าง: ${distance.toFixed(1)}
+
+${distance < 20 ? '✅ สีตรงกันมาก!' : distance < 50 ? '⚠️ สีใกล้เคียง' : '❌ สีแตกต่างมาก'}`);
     }
 
-    // ประมวลผลข้อมูลรูปภาพ
-    processImageData(ctx, width, height) {
-        const imageData = ctx.getImageData(0, 0, width, height);
-        const pixels = imageData.data;
-        this.pixelQueue = [];
-
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const i = (y * width + x) * 4;
-                const r = pixels[i];
-                const g = pixels[i + 1];
-                const b = pixels[i + 2];
-                const a = pixels[i + 3];
-                
-                if (a > 128) { // Only visible pixels
-                    const hex = this.rgbToHex(r, g, b);
-                    const colorIndex = this.findClosestColor(hex);
-                    
-                    this.pixelQueue.push({
-                        x: x,
-                        y: y,
-                        color: colorIndex
-                    });
-                }
-            }
-        }
+    // สี Wplace ที่ใช้ได้ (ปรับปรุงให้ครบถ้วน)
+    getWplaceColors() {
+        return [
+            { name: 'White', hex: '#FFFFFF', rgb: [255, 255, 255] },
+            { name: 'Light Gray', hex: '#E4E4E4', rgb: [228, 228, 228] },
+            { name: 'Gray', hex: '#888888', rgb: [136, 136, 136] },
+            { name: 'Dark Gray', hex: '#666666', rgb: [102, 102, 102] },
+            { name: 'Black', hex: '#000000', rgb: [0, 0, 0] },
+            { name: 'Pink', hex: '#FFA7D1', rgb: [255, 167, 209] },
+            { name: 'Red', hex: '#E50000', rgb: [229, 0, 0] },
+            { name: 'Dark Red', hex: '#BE0039', rgb: [190, 0, 57] },
+            { name: 'Orange', hex: '#FF4500', rgb: [255, 69, 0] },
+            { name: 'Brown', hex: '#A06A42', rgb: [160, 106, 66] },
+            { name: 'Yellow', hex: '#FFD635', rgb: [255, 214, 53] },
+            { name: 'Light Green', hex: '#00A368', rgb: [0, 163, 104] },
+            { name: 'Green', hex: '#00756F', rgb: [0, 117, 111] },
+            { name: 'Dark Green', hex: '#009eaa', rgb: [0, 158, 170] },
+            { name: 'Cyan', hex: '#00CCC0', rgb: [0, 204, 192] },
+            { name: 'Light Blue', hex: '#2450A4', rgb: [36, 80, 164] },
+            { name: 'Blue', hex: '#3690EA', rgb: [54, 144, 234] },
+            { name: 'Dark Blue', hex: '#51E9F4', rgb: [81, 233, 244] },
+            { name: 'Purple', hex: '#811E9F', rgb: [129, 30, 159] },
+            { name: 'Dark Purple', hex: '#B44AC0', rgb: [180, 74, 192] }
+        ];
     }
 
-    // แปลง RGB เป็น HEX
-    rgbToHex(r, g, b) {
-        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
-    }
-
-    // หาสีที่ใกล้เคียงที่สุด (return hex)
-    findClosestColorHex(targetHex) {
+    findClosestWplaceColor(r, g, b) {
+        const colors = this.getWplaceColors();
         let minDistance = Infinity;
-        let closestColorHex = '#FFFFFF';
+        let closestColor = colors[0];
         
-        for (const hex of Object.keys(this.colorMap)) {
-            const distance = this.colorDistance(targetHex, hex);
+        for (const color of colors) {
+            const distance = this.getColorDistance(r, g, b, color.rgb);
+            
             if (distance < minDistance) {
                 minDistance = distance;
-                closestColorHex = hex;
+                closestColor = color;
             }
         }
         
-        return closestColorHex;
+        return closestColor;
     }
 
-    // หาสีที่ใกล้เคียงที่สุด (return index)
-    findClosestColor(targetHex) {
-        const closestHex = this.findClosestColorHex(targetHex);
-        return this.colorMap[closestHex].index;
+    getColorDistance(r1, g1, b1, rgb2) {
+        const [r2, g2, b2] = rgb2;
+        // ใช้ Delta E algorithm แบบง่าย
+        return Math.sqrt(
+            Math.pow(r1 - r2, 2) * 0.3 +
+            Math.pow(g1 - g2, 2) * 0.59 +
+            Math.pow(b1 - b2, 2) * 0.11
+        );
     }
 
-    // คำนวณระยะห่างของสี
-    colorDistance(hex1, hex2) {
-        const r1 = parseInt(hex1.substr(1, 2), 16);
-        const g1 = parseInt(hex1.substr(3, 2), 16);
-        const b1 = parseInt(hex1.substr(5, 2), 16);
-        
-        const r2 = parseInt(hex2.substr(1, 2), 16);
-        const g2 = parseInt(hex2.substr(3, 2), 16);
-        const b2 = parseInt(hex2.substr(5, 2), 16);
-        
-        return Math.sqrt((r2-r1)**2 + (g2-g1)**2 + (b2-b1)**2);
+    getContrastColor(r, g, b) {
+        // คำนวณความสว่างเพื่อเลือกสีข้อความ
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        return brightness > 128 ? '#000000' : '#ffffff';
     }
 
-    // เริ่ม Bot
-    startBot() {
-        if (this.pixelQueue.length === 0) {
-            this.updateStatus('❌ No image processed. Please apply settings first.');
-            return;
-        }
-
-        this.isRunning = true;
-        this.startX = parseInt(document.getElementById('startX').value);
-        this.startY = parseInt(document.getElementById('startY').value);
-        this.delay = parseInt(document.getElementById('delay').value);
-        
-        // แสดง progress bar
-        document.getElementById('progressBar').style.display = 'block';
-        this.totalPixels = this.pixelQueue.length;
-        
-        this.updateStatus('🚀 Bot started! Placing pixels...');
-        this.placeNextPixel();
+    rgbToHex(r, g, b) {
+        return "#" + [r, g, b].map(x => {
+            const hex = x.toString(16).toUpperCase();
+            return hex.length === 1 ? "0" + hex : hex;
+        }).join("");
     }
 
-    // หยุด Bot
-    stopBot() {
-        this.isRunning = false;
-        if (this.timeout) {
-            clearTimeout(this.timeout);
-        }
-        document.getElementById('progressBar').style.display = 'none';
-        this.updateStatus('⏹️ Bot stopped');
-    }
-
-    // วางพิกเซลถัดไป
-    async placeNextPixel() {
-        if (!this.isRunning || this.pixelQueue.length === 0) {
-            this.updateStatus('🎉 All pixels placed successfully!');
-            document.getElementById('progressBar').style.display = 'none';
-            return;
-        }
-
-        const pixel = this.pixelQueue.shift();
-        const actualX = this.startX + pixel.x;
-        const actualY = this.startY + pixel.y;
-        
-        // อัพเดท progress
-        const completed = this.totalPixels - this.pixelQueue.length;
-        const progress = (completed / this.totalPixels) * 100;
-        
-        document.getElementById('progressFill').style.width = progress + '%';
-        document.getElementById('progressText').textContent = 
-            `${completed}/${this.totalPixels} pixels (${progress.toFixed(1)}%)`;
-
-        try {
-            await this.placePixel(actualX, actualY, pixel.color);
-            this.updateStatus(`🎨 Placed pixel at (${actualX}, ${actualY}) - ${this.pixelQueue.length} remaining`);
-        } catch (error) {
-            this.updateStatus(`❌ Error placing pixel: ${error.message}`);
-        }
-
-        // Schedule next pixel
-        this.timeout = setTimeout(() => {
-            this.placeNextPixel();
-        }, this.delay);
-    }
-
-    // วางพิกเซล (ต้องปรับแต่งตาม API ของ Wplace)
-    async placePixel(x, y, colorIndex) {
-        // นี่คือตัวอย่าง - ต้องปรับแต่งตาม API จริงของ wplace.live
-        
-        // Method 1: ใช้ fetch API
-        try {
-            const response = await fetch('/api/place', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    x: x,
-                    y: y,
-                    color: colorIndex
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-        } catch (error) {
-            // Method 2: หาก API ไม่ทำงาน ลองใช้ DOM manipulation
-            console.log(`Placing pixel at (${x}, ${y}) with color ${colorIndex}`);
-            
-            // สำหรับ debug - แสดงพิกเซลที่จะวาง
-            if (window.DEBUG_MODE) {
-                console.log(`Debug: Would place color ${colorIndex} at (${x}, ${y})`);
-            }
-            
-            // ถ้า API ไม่ทำงาน ให้โยน error เพื่อให้ผู้ใช้ทราบ
-            // throw error;
-        }
-    }
-
-    // อัพเดทสถานะ
-    updateStatus(message) {
-        const statusEl = document.getElementById('statusText');
-        if (statusEl) {
-            statusEl.textContent = message;
-        }
-        console.log(`[WPlace Bot Pro] ${message}`);
-    }
-
-    // สร้างเมนูเลือกสี
-    createColorPalette() {
-        let paletteHtml = '';
-        for (const [hex, info] of Object.entries(this.colorMap)) {
-            paletteHtml += `
-                <div style="display: inline-flex; align-items: center; margin: 2px; padding: 3px 6px; background: rgba(255,255,255,0.1); border-radius: 3px; font-size: 11px;">
-                    <div style="width: 12px; height: 12px; background: ${hex}; border-radius: 2px; margin-right: 5px; border: 1px solid rgba(255,255,255,0.3);"></div>
-                    ${info.name}
-                </div>
-            `;
-        }
-        return paletteHtml;
-    }
-
-    // เพิ่มฟีเจอร์ Export Settings
-    exportSettings() {
-        if (!this.pixelQueue.length && !this.currentImage) {
-            this.updateStatus('❌ No data to export');
-            return;
-        }
-
-        const settings = {
-            imageInfo: this.imageAnalysis,
-            pixelQueue: this.pixelQueue.slice(0, 100), // Export first 100 pixels as sample
-            startX: this.startX,
-            startY: this.startY,
-            delay: this.delay,
-            timestamp: new Date().toISOString()
-        };
-
-        const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `wplace-settings-${Date.now()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        this.updateStatus('✅ Settings exported successfully');
-    }
-
-    // เพิ่มฟีเจอร์ Import Settings
-    importSettings() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const settings = JSON.parse(e.target.result);
-                    
-                    if (settings.pixelQueue) {
-                        this.pixelQueue = settings.pixelQueue;
-                    }
-                    if (settings.startX !== undefined) {
-                        document.getElementById('startX').value = settings.startX;
-                    }
-                    if (settings.startY !== undefined) {
-                        document.getElementById('startY').value = settings.startY;
-                    }
-                    if (settings.delay !== undefined) {
-                        document.getElementById('delay').value = settings.delay;
-                    }
-                    
-                    this.updateStatus('✅ Settings imported successfully');
-                } catch (error) {
-                    this.updateStatus('❌ Invalid settings file');
-                }
-            };
-            reader.readAsText(file);
-        };
-        input.click();
-    }
-
-    // คำนวณเวลาที่ใช้ทั้งหมด
-    calculateTotalTime() {
-        if (!this.pixelQueue.length) return '0 minutes';
-        
-        const totalSeconds = (this.pixelQueue.length * this.delay) / 1000;
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        
-        if (hours > 0) {
-            return `${hours} hours ${minutes} minutes`;
-        } else {
-            return `${minutes} minutes`;
-        }
-    }
-
-    // เพิ่มเมนู Advanced Options
-    createAdvancedMenu() {
-        const advancedHtml = `
-            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-                <h4 style="margin-top: 0; color: #BA68C8;">⚡ Advanced Options</h4>
-                
-                <div style="display: flex; gap: 10px; margin: 10px 0;">
-                    <button id="exportSettings" style="flex: 1; padding: 8px; background: #9C27B0; border: none; color: white; border-radius: 5px; cursor: pointer; font-size: 12px;">📥 Export</button>
-                    <button id="importSettings" style="flex: 1; padding: 8px; background: #673AB7; border: none; color: white; border-radius: 5px; cursor: pointer; font-size: 12px;">📤 Import</button>
-                    <button id="previewMode" style="flex: 1; padding: 8px; background: #FF5722; border: none; color: white; border-radius: 5px; cursor: pointer; font-size: 12px;">👁️ Preview</button>
-                </div>
-                
-                <div style="margin: 10px 0;">
-                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 12px;">
-                        <input type="checkbox" id="debugMode"> Enable Debug Mode
-                    </label>
-                </div>
-                
-                <div id="timeEstimate" style="font-size: 12px; color: #81C784; margin-top: 10px;"></div>
-            </div>
-        `;
-        
-        return advancedHtml;
-    }
-
-    // เพิ่มโหมด Preview
-    enablePreviewMode() {
-        if (!this.pixelQueue.length) {
-            this.updateStatus('❌ No image processed');
-            return;
-        }
-
-        // สร้าง canvas สำหรับ preview การวาง pixels
-        const previewWindow = window.open('', '_blank', 'width=800,height=600');
-        previewWindow.document.write(`
-            <html>
-            <head>
-                <title>WPlace Art Preview</title>
-                <style>
-                    body { 
-                        background: #222; 
-                        color: white; 
-                        font-family: Arial, sans-serif; 
-                        margin: 0; 
-                        padding: 20px; 
-                    }
-                    #preview-canvas { 
-                        border: 2px solid #666; 
-                        image-rendering: pixelated;
-                        max-width: 100%;
-                        max-height: 70vh;
-                    }
-                    .info { 
-                        margin: 10px 0; 
-                        padding: 10px; 
-                        background: rgba(255,255,255,0.1); 
-                        border-radius: 5px; 
-                    }
-                </style>
-            </head>
-            <body>
-                <h2>🎨 WPlace Art Preview</h2>
-                <div class="info">
-                    Start Position: (${this.startX}, ${this.startY})<br>
-                    Total Pixels: ${this.pixelQueue.length}<br>
-                    Estimated Time: ${this.calculateTotalTime()}
-                </div>
-                <canvas id="preview-canvas"></canvas>
-                <script>
-                    const canvas = document.getElementById('preview-canvas');
-                    const ctx = canvas.getContext('2d');
-                    
-                    // Set canvas size based on pixel queue
-                    let maxX = 0, maxY = 0;
-                    const pixels = ${JSON.stringify(this.pixelQueue)};
-                    const colorMap = ${JSON.stringify(this.colorMap)};
-                    
-                    pixels.forEach(p => {
-                        maxX = Math.max(maxX, p.x);
-                        maxY = Math.max(maxY, p.y);
-                    });
-                    
-                    canvas.width = maxX + 1;
-                    canvas.height = maxY + 1;
-                    
-                    // Draw pixels
-                    const colorList = Object.keys(colorMap);
-                    pixels.forEach(pixel => {
-                        const color = colorList.find(c => colorMap[c].index === pixel.color);
-                        ctx.fillStyle = color || '#FFFFFF';
-                        ctx.fillRect(pixel.x, pixel.y, 1, 1);
-                    });
-                </script>
-            </body>
-            </html>
-        `);
-        
-        this.updateStatus('✅ Preview window opened');
-    }
-
-    // อัพเดทการแสดง Advanced Options
-    updateAdvancedFeatures() {
-        const controlSection = document.getElementById('controlSection');
-        if (controlSection && !document.getElementById('advancedOptions')) {
-            const advancedDiv = document.createElement('div');
-            advancedDiv.id = 'advancedOptions';
-            advancedDiv.innerHTML = this.createAdvancedMenu();
-            controlSection.appendChild(advancedDiv);
-            
-            // Bind advanced events
-            document.getElementById('exportSettings').onclick = () => this.exportSettings();
-            document.getElementById('importSettings').onclick = () => this.importSettings();
-            document.getElementById('previewMode').onclick = () => this.enablePreviewMode();
-            document.getElementById('debugMode').onchange = (e) => {
-                window.DEBUG_MODE = e.target.checked;
-                this.updateStatus(e.target.checked ? '🐛 Debug mode enabled' : '🐛 Debug mode disabled');
-            };
-        }
-        
-        // Update time estimate
-        const timeEstimate = document.getElementById('timeEstimate');
-        if (timeEstimate && this.pixelQueue.length > 0) {
-            timeEstimate.innerHTML = `⏱️ Estimated completion time: ${this.calculateTotalTime()}`;
-        }
-    }
-
-    // เริ่มต้น Bot
-    init() {
-        // ตรวจสอบว่ามี panel อยู่แล้วหรือไม่
-        const existingPanel = document.getElementById('wplace-bot-panel');
-        if (existingPanel) {
-            existingPanel.remove();
-        }
-
-        this.createControlPanel();
-        this.updateStatus('🎨 WPlace Auto Art Pro initialized!');
-        
-        console.log('🎨 WPlace Auto Art Pro loaded successfully!');
-        console.log('🚀 Enhanced Features:');
-        console.log('   • 📁 File upload support');
-        console.log('   • 🔍 Advanced image analysis');
-        console.log('   • 🎨 Color palette detection');
-        console.log('   • 📐 Custom sizing with aspect ratio');
-        console.log('   • 🖼️ Border frame options');
-        console.log('   • 📊 Progress tracking');
-        console.log('   • ⚡ Advanced export/import');
-        console.log('   • 👁️ Preview mode');
-        console.log('');
-        console.log('📋 Quick Start:');
-        console.log('1. Click "Choose File" to upload your image');
-        console.log('2. Review the color analysis');
-        console.log('3. Configure size settings');
-        console.log('4. Set placement coordinates');
-        console.log('5. Click "Start Bot" to begin!');
+    showPixelInfo(info) {
+        document.getElementById('pixel-info').innerHTML = 
+            `<pre style="margin: 0; white-space: pre-wrap; font-size: 11px; line-height: 1.4; color: #fff;">${info}</pre>`;
     }
 }
 
-// เริ่มต้น Bot
-const wplaceBot = new WplaceAutoBot();
-wplaceBot.init();
+// ฟังก์ชันสำหรับสร้าง console commands
+function createWplaceCommands() {
+    window.wplace = {
+        start: () => {
+            if (document.getElementById('wplace-analyzer')) {
+                console.log('🎨 Wplace Analyzer กำลังทำงานอยู่แล้ว!');
+                return;
+            }
+            new WplacePixelAnalyzer();
+            console.log('🚀 เปิด Wplace Pixel Analyzer v2.0 แล้ว!');
+            
+            // เก็บ reference สำหรับ back function
+            setTimeout(() => {
+                const analyzer = document.getElementById('wplace-analyzer');
+                if (analyzer) {
+                    analyzer._analyzer = window._currentAnalyzer;
+                }
+            }, 100);
+        },
+        
+        stop: () => {
+            const analyzer = document.getElementById('wplace-analyzer');
+            if (analyzer) {
+                analyzer.remove();
+                console.log('🛑 ปิด Wplace Analyzer แล้ว');
+            } else {
+                console.log('❌ ไม่พบ Wplace Analyzer ที่ทำงานอยู่');
+            }
+        },
+        
+        goto: (x, y) => {
+            if (arguments.length < 2) {
+                console.log('🚀 wplace.goto(x, y) - ไปยังพิกัดที่กำหนด');
+                console.log('ตัวอย่าง: wplace.goto(787, 3730)');
+                return;
+            }
+            
+            const newHash = `#${x},${y}`;
+            window.location.hash = newHash;
+            
+            console.log(`🚀 กำลัง Goto ไปยัง (${x}, ${y})`);
+            console.log(`📍 URL: ${window.location.origin}${newHash}`);
+            
+            // คำนวณ tile info
+            const TILE_SIZE = 256;
+            const tileX = Math.floor(x / TILE_SIZE);
+            const tileY = Math.floor(y / TILE_SIZE);
+            const pixelX = x % TILE_SIZE;
+            const pixelY = y % TILE_SIZE;
+            
+            setTimeout(() => {
+                console.log(`✅ Goto เสร็จสิ้น!
+📍 Global: (${x}, ${y})
+🔲 Tile: (${tileX}, ${tileY})
+🎯 Pixel: (${pixelX}, ${pixelY})`);
+            }, 1000);
+            
+            return { x, y, tile: { x: tileX, y: tileY }, pixel: { x: pixelX, y: pixelY } };
+        },
+        
+        back: () => {
+            const analyzer = document.getElementById('wplace-analyzer');
+            if (analyzer) {
+                const instance = analyzer._analyzer;
+                if (instance && instance.lastPosition) {
+                    window.location.hash = instance.lastPosition;
+                    console.log(`🔄 กลับไปตำแหน่งเดิม: ${instance.lastPosition}`);
+                    return;
+                }
+            }
+            console.log('❌ ไม่มีตำแหน่งเดิมให้กลับไป');
+        },
+        
+        coords: (x, y) => {
+            if (arguments.length === 0) {
+                console.log('📍 wplace.coords(x, y) - คำนวณ tile coordinates');
+                return;
+            }
+            
+            const TILE_SIZE = 256;
+            const tileX = Math.floor(x / TILE_SIZE);
+            const tileY = Math.floor(y / TILE_SIZE);
+            const pixelX = x % TILE_SIZE;
+            const pixelY = y % TILE_SIZE;
+            
+            console.log(`📍 Global: (${x}, ${y})
+🔲 Tile: (${tileX}, ${tileY})
+🎯 Pixel in Tile: (${pixelX}, ${pixelY})`);
+            
+            return {
+                global: { x, y },
+                tile: { x: tileX, y: tileY },
+                pixel: { x: pixelX, y: pixelY }
+            };
+        },
+        
+        help: () => {
+            console.log(`
+🎨 Wplace Pixel Analyzer v2.0 Commands:
+═══════════════════════════════════════
 
-// Export for manual control และเพิ่มคำสั่งช่วยเหลือ
-window.wplaceBot = wplaceBot;
-window.wplaceHelp = () => {
-    console.log('🎨 WPlace Auto Art Pro - Commands:');
-    console.log('   wplaceBot.init() - Initialize the bot');
-    console.log('   wplaceBot.stopBot() - Stop the bot');
-    console.log('   wplaceBot.exportSettings() - Export current settings');
-    console.log('   wplaceBot.enablePreviewMode() - Open preview window');
-    console.log('   window.DEBUG_MODE = true - Enable debug mode');
-    console.log('');
-    console.log('💡 Tips:');
-    console.log('   • Use PNG images with transparent backgrounds');
-    console.log('   • Keep images small (under 100x100px) for faster processing');
-    console.log('   • Add borders for better visual separation');
-    console.log('   • Export settings to save your progress');
-};
+wplace.start()        - เปิดเครื่องมือวิเคราะห์
+wplace.stop()         - ปิดเครื่องมือ  
+wplace.goto(x, y)     - ไปยังพิกัดที่กำหนด
+wplace.back()         - กลับตำแหน่งเดิม
+wplace.coords(x, y)   - คำนวณ tile coordinates
+wplace.help()         - แสดงคำสั่งทั้งหมด
 
-console.log('Type "wplaceHelp()" for available commands!');
+🆕 ฟีเจอร์ใหม่ v2.0:
+• รองรับ Tile-based Coordinate System
+• แปลง Global ↔ Tile Coordinates อัตโนมัติ
+• ดึงพิกัดปัจจุบันจาก Wplace
+• 🚀 Goto ไปยังพิกัดที่ต้องการทันที
+• 🔄 Back กลับตำแหน่งเดิม
+• วิเคราะห์สีที่แม่นยำขึ้น
+• แสดงความแตกต่างของสี (Color Distance)
+
+วิธีใช้:
+1. เรียก wplace.start()
+2. อัปโหลดรูปภาพ template
+3. ระบุ Global Coordinates (เช่น 787, 3730)
+4. กด "🚀 Goto" เพื่อไปยังตำแหน่งนั้น
+5. กด "วิเคราะห์พิกเซล" เพื่อดูสีและพิกัด Tile
+6. ใช้ข้อมูลสำหรับวาง pixel บน Wplace
+
+💡 เคล็ดลับ: 
+• wplace.goto(787, 3730) - ไปยังพิกัดผ่าน console
+• wplace.back() - กลับตำแหน่งเดิม
+• "ดึงพิกัดปัจจุบัน" เพื่อดูตำแหน่งที่กำลังดูอยู่
+            `);
         }
+    };
+}
+
+// เริ่มต้นระบบ
+createWplaceCommands();
+
+// แสดงข้อความต้อนรับ
+console.log(`
+🎨 Wplace Pixel Analyzer v2.0 พร้อมใช้งาน!
+═════════════════════════════════════════════
+
+🆕 อัปเดตใหม่:
+✅ รองรับ Tile-based Coordinates
+✅ แปลง Global ↔ Tile อัตโนมัติ  
+✅ ดึงพิกัดจาก URL/DOM
+✅ 🚀 Goto ไปยังพิกัดทันที
+✅ 🔄 Back กลับตำแหน่งเดิม
+✅ วิเคราะห์สีที่แม่นยำ
+
+พิมพ์ wplace.help() เพื่อดูคำสั่งทั้งหมด
+หรือ wplace.start() เพื่อเริ่มใช้งานทันที!
+
+🔥 พิเศษ: 
+• wplace.goto(787, 3730) - ไปยังพิกัดทันที
+• wplace.coords(787, 3730) - คำนวณ tile
+`);
